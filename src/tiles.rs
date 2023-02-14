@@ -3,11 +3,11 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 fn rotate(matrix: &[Vec<bool>]) -> Vec<Vec<bool>> {
-    let m = matrix.len();
-    let n = matrix[0].len();
+    let m = matrix[0].len();
+    let n = matrix.len();
     let mut rotated = vec![vec![false; n]; m];
     for (i, j) in (0..n).cartesian_product(0..m) {
-        rotated[j][n - i - 1] = matrix[i][j];
+        rotated[j][(n - i - 1) % n] = matrix[i][j];
     }
     rotated
 }
@@ -31,16 +31,6 @@ fn rotations_and_mirrors(matrix: &[Vec<bool>]) -> Vec<Vec<Vec<bool>>> {
     rotations
 }
 
-fn matrix2number(matrix: &[Vec<bool>]) -> u16 {
-    let mut number = 0u16;
-
-    for (i, j) in (0..4).cartesian_product(0..4) {
-        number |= (matrix[i][j] as u16) << (4 * i + j);
-    }
-    number
-}
-
-
 fn submatrix2matrices(matrix: &Vec<Vec<bool>>, a: usize, b: usize) -> Vec<Vec<Vec<bool>>> {
     let m = matrix.len();
     let n = matrix[0].len();
@@ -54,8 +44,20 @@ fn submatrix2matrices(matrix: &Vec<Vec<bool>>, a: usize, b: usize) -> Vec<Vec<Ve
         }
         result.push(temp);
     }
-
     result
+}
+
+fn matrix2number(matrix: &[Vec<bool>]) -> u64 {
+    let mut number = 0u64;
+    let m = matrix.len();
+    let n = matrix[0].len();
+
+    for (i, j) in (0..m).cartesian_product(0..n) {
+        number = number << 1;
+        number |= matrix[i][j] as u64;
+    }
+    // println!("{:0width$b}",number,width=64);
+    number
 }
 
 pub fn number2matrix(m: usize, n: usize, number: u64) -> Vec<Vec<bool>> {
@@ -80,14 +82,14 @@ pub fn bit_masked_tiles(tilefile: BufReader<File>) -> Vec<u64> {
             let n = parts.next().unwrap().parse::<usize>().unwrap();
             let b = u64::from_str_radix(parts.next().unwrap(), 2).unwrap();
             let matrix = number2matrix(m, n, b);
-            let matrices = submatrix2matrices(&matrix, 10, 5);
+            let matrices = rotations_and_mirrors(&matrix);
             matrices
                 .iter()
-                .flat_map(|matrix| rotations_and_mirrors(matrix))
-                .map(|matrix| (matrix2number(&matrix) as u64) | 1 << (50 + l))
+                .unique()
+                .flat_map(|matrix| submatrix2matrices(matrix, 5, 10))
+                .map(|matrix| (matrix2number(&matrix) as u64) + (1u64 << (50 + l)))
                 .collect()
         })
         .sorted()
-        .dedup()
         .collect_vec()
 }
