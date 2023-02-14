@@ -3,18 +3,17 @@ use indicatif::ParallelProgressIterator;
 use rayon::prelude::*;
 use std::fs::File;
 use std::io::BufReader;
-
 mod tiles;
 use tiles::{bit_masked_tiles, number2matrix};
 
-fn u64_2str_matrix<'a>(matrix: &[Vec<u64>], mapping: &'a [&'a str]) -> Vec<Vec<&'a str>> {
+fn u64_2str_matrix(matrix: &[Vec<u64>], mapping: &[&str]) -> Vec<String> {
     let mut str_matrix = vec![];
     for row in matrix {
         let mut str_row = vec![];
         for &value in row {
             str_row.push(mapping[value as usize]);
         }
-        str_matrix.push(str_row);
+        str_matrix.push(str_row.join(""));
     }
     str_matrix
 }
@@ -22,8 +21,8 @@ fn u64_2str_matrix<'a>(matrix: &[Vec<u64>], mapping: &'a [&'a str]) -> Vec<Vec<&
 fn main() -> Result<()> {
     let tilefile = BufReader::new(File::open("tiles.txt")?);
     let all_tiles = bit_masked_tiles(tilefile);
-    // let mask0 = (1<<11)+ (1<<8)+ (1<<45);
-    let mask0 = 0;
+    let mask0 = (1<<11)+ (1<<8)+ (1<<45);
+    // let mask0 = 0;
     let tiles: Vec<u64> = all_tiles
         .iter()
         .filter(|t| (**t & mask0) == 0)
@@ -93,7 +92,7 @@ fn main() -> Result<()> {
     for solution in mask_solutions {
         for s in solution {
             let mask = s & ((1u64 << 50) - 1);
-            let kind = s >> 50;
+            let kind = (u64::BITS - (s >> 50).leading_zeros()) as u64;
             let mat = number2matrix(5, 10, mask);
             for (i, row) in mat.iter().enumerate() {
                 for (j, &value) in row.iter().enumerate() {
@@ -108,6 +107,7 @@ fn main() -> Result<()> {
         for line in str_matrix {
             println!("{:?}", line)
         }
+        println!();
     }
 
     Ok(())
