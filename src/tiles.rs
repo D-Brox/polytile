@@ -53,19 +53,17 @@ fn matrix2number(matrix: &[Vec<bool>]) -> u64 {
     let n = matrix[0].len();
 
     for (i, j) in (0..m).cartesian_product(0..n) {
-        number = number << 1;
+        number <<= 1;
         number |= matrix[i][j] as u64;
     }
-    // println!("{:0width$b}",number,width=64);
     number
 }
 
 pub fn number2matrix(m: usize, n: usize, number: u64) -> Vec<Vec<bool>> {
-    let mut matrix = vec![vec![false; n]; m];
-
+    let mut matrix = vec![vec![false; m]; n];
     for (i, j) in (0..m).cartesian_product(0..n) {
         if (number & (1 << (i * n + j))) != 0 {
-            matrix[i][j] = true;
+            matrix[j][i] = true;
         }
     }
     matrix
@@ -78,15 +76,15 @@ pub fn bit_masked_tiles(tilefile: BufReader<File>) -> Vec<u64> {
         .flat_map(|(l, line)| -> Vec<u64> {
             let line = line.unwrap();
             let mut parts = line.split_whitespace();
-            let m = parts.next().unwrap().parse::<usize>().unwrap();
             let n = parts.next().unwrap().parse::<usize>().unwrap();
+            let m = parts.next().unwrap().parse::<usize>().unwrap();
             let b = u64::from_str_radix(parts.next().unwrap(), 2).unwrap();
             let matrix = number2matrix(m, n, b);
             let matrices = rotations_and_mirrors(&matrix);
             matrices
                 .iter()
                 .unique()
-                .flat_map(|matrix| submatrix2matrices(matrix, 5, 10))
+                .flat_map(|matrix| submatrix2matrices(matrix, 10, 5))
                 .map(|matrix| (matrix2number(&matrix) as u64) + (1u64 << (50 + l)))
                 .collect()
         })
