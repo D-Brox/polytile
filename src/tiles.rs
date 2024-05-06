@@ -15,7 +15,7 @@ fn rotate(matrix: &[Vec<bool>]) -> Vec<Vec<bool>> {
 fn mirror(matrix: &[Vec<bool>]) -> Vec<Vec<bool>> {
     matrix
         .iter()
-        .map(|row| row.iter().rev().cloned().collect())
+        .map(|row| row.iter().rev().copied().collect())
         .collect()
 }
 
@@ -31,13 +31,13 @@ fn rotations_and_mirrors(matrix: &[Vec<bool>]) -> Vec<Vec<Vec<bool>>> {
     rotations
 }
 
-fn submatrix2matrices(matrix: &Vec<Vec<bool>>, a: usize, b: usize) -> Vec<Vec<Vec<bool>>> {
+fn submatrix2matrices(matrix: &[Vec<bool>], a: usize, b: usize) -> Vec<Vec<Vec<bool>>> {
     let m = matrix.len();
     let n = matrix[0].len();
 
     let mut result = vec![];
 
-    for (i, j) in (0..a - m + 1).cartesian_product(0..b - n + 1) {
+    for (i, j) in (0..=(a - m)).cartesian_product(0..=(b - n)) {
         let mut temp = vec![vec![false; b]; a];
         for (k, l) in (0..m).cartesian_product(0..n) {
             temp[i + k][j + l] |= matrix[k][l];
@@ -85,7 +85,7 @@ pub fn bit_masked_tiles(tilefile: BufReader<File>) -> Vec<u64> {
                 .iter()
                 .unique()
                 .flat_map(|matrix| submatrix2matrices(matrix, 10, 5))
-                .map(|matrix| (matrix2number(&matrix) as u64) + (1u64 << (50 + l)))
+                .map(|matrix| matrix2number(&matrix) + (1u64 << (50 + l)))
                 .collect()
         })
         .sorted()

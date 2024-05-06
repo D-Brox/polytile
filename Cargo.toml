@@ -7,4 +7,5 @@ edition = "2021"
 anyhow = "1.0.69"
 itertools = "0.10.5"
 rayon = "1.6.1"
-indicatif = {version = "0.17.3", features = ["rayon"]}
+# indicatif = {version = "0.17.3", features = ["rayon"]}
+seq-macro = "0.3.5"
