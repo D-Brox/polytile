@@ -58,13 +58,13 @@ fn matrix2number(matrix: &[Vec<bool>]) -> BigUint {
     let width = matrix.len();
     let height = matrix[0].len();
     for (i, j) in (0..height).cartesian_product(0..width) {
-        number.set_bit((i*width+j) as u64, matrix[j][i]);
+        number.set_bit((i * width + j) as u64, matrix[j][i]);
     }
-    
+
     number
 }
 
-pub fn number2matrix(width: usize, height: usize, number: u64) -> Vec<Vec<bool>> {
+pub fn u64_2matrix(width: usize, height: usize, number: u64) -> Vec<Vec<bool>> {
     let mut matrix = vec![vec![false; height]; width];
     for (i, j) in (0..height).cartesian_product(0..width) {
         if (number & (1 << (i * width + j))) != 0 {
@@ -72,7 +72,27 @@ pub fn number2matrix(width: usize, height: usize, number: u64) -> Vec<Vec<bool>>
         }
     }
     matrix
+}
 
+pub fn number2matrix(width: usize, height: usize, number: BigUint) -> Vec<Vec<bool>> {
+    let mut matrix = vec![vec![false; height]; width];
+    for (i, j) in (0..height).cartesian_product(0..width) {
+        if (number.clone() & (BigUint::from(1u32) << (i * width + j))) != BigUint::ZERO {
+            matrix[j][i] = true;
+        }
+    }
+    matrix
+}
+
+pub fn min_rot(width: usize, height: usize, number: BigUint) -> BigUint {
+    let matrix = number2matrix(width, height, number.clone());
+    let bits = number >> width * height;
+    rotations_and_mirrors(&matrix)
+        .iter()
+        .filter(|m| m.len() == matrix.len())
+        .map(|m| matrix2number(m) + (bits.clone() << height * width))
+        .max()
+        .unwrap()
 }
 
 pub fn number2grid(width: usize, height: usize, number: BigUint) -> Grid {
@@ -86,7 +106,11 @@ pub fn number2grid(width: usize, height: usize, number: BigUint) -> Grid {
     grid
 }
 
-pub fn bit_masked_tiles(width: usize, height: usize, tilefile: BufReader<File>) -> (Vec<BigUint>,Vec<String>) {
+pub fn bit_masked_tiles(
+    width: usize,
+    height: usize,
+    tilefile: BufReader<File>,
+) -> (Vec<BigUint>, Vec<String>) {
     let mut tiles = vec![];
     let bit_masked = tilefile
         .lines()
@@ -98,7 +122,7 @@ pub fn bit_masked_tiles(width: usize, height: usize, tilefile: BufReader<File>) 
             let h = parts.next().unwrap().parse::<usize>().unwrap();
             let b = u64::from_str_radix(parts.next().unwrap(), 2).unwrap();
             tiles.push(parts.next().unwrap().to_owned());
-            let matrix = number2matrix(w, h, b);
+            let matrix = u64_2matrix(w, h, b);
             let matrices = rotations_and_mirrors(&matrix);
             matrices
                 .iter()
@@ -113,5 +137,5 @@ pub fn bit_masked_tiles(width: usize, height: usize, tilefile: BufReader<File>) 
         })
         .sorted()
         .collect_vec();
-        (bit_masked, tiles)
+    (bit_masked, tiles)
 }
