@@ -35,6 +35,9 @@ struct Args {
 
     #[arg(long, default_value_t = 12)]
     max_tiles: usize,
+
+    #[arg(long, default_value_t = false)]
+    verbose: bool,
 }
 
 fn main() -> Result<()> {
@@ -66,6 +69,7 @@ fn main() -> Result<()> {
                     max_path: &Arc<Mutex<usize>>,
                     local_max_path: &mut usize,
                     solutions: &mut Vec<(BigUint, usize)>,
+                    verbose: bool,
                 ) {
                     let grid = number2grid(width, height, flat_grid.clone());
                     let mut max_path_len = 0;
@@ -100,9 +104,12 @@ fn main() -> Result<()> {
                         solutions.push((min_rot(width, height, flat_grid.clone()), max_path_len));
                         *local_max_path = max_path_len;
                         *max_path = max_path_len;
-                        let tiles_grid = number2grid(names.len(), 1, flat_grid.clone() >> (height * width));
-                        println!("{}", names.join(""));
-                        println!("{tiles_grid:#?} {max_path_len}\n");
+                        if verbose {
+                            let tiles_grid = number2grid(names.len(), 1, flat_grid.clone() >> (height * width));
+                            println!("{:#?}", number2grid(width, height, flat_grid.clone()));
+                            println!("{}", names.join(""));
+                            println!("{tiles_grid:#?} {}\n",max_path_len+1);
+                        }
                     }
                 }
 
@@ -135,6 +142,7 @@ fn main() -> Result<()> {
                     names: &Vec<String>,
                     max_path: &Arc<Mutex<usize>>,
                     local_max_path: &mut usize,
+                    verbose:bool,
                 ) {
                     let max_tiles = |n: usize, w: usize, h: usize, m: usize, k: usize| {
                         m < n || h * w < n * 5 + k
@@ -149,6 +157,7 @@ fn main() -> Result<()> {
                             &max_path,
                             local_max_path,
                             sol,
+                            verbose,
                         );
                     }
                     if max_tiles(names.len() - depth, width, height, max, known) {
@@ -166,6 +175,7 @@ fn main() -> Result<()> {
                             &max_path,
                             local_max_path,
                             sol,
+                            verbose,
                         );
                         return;
                     }
@@ -185,6 +195,7 @@ fn main() -> Result<()> {
                             &names,
                             &max_path,
                             local_max_path,
+                            verbose,
                         );
                     }
                 }
@@ -204,6 +215,7 @@ fn main() -> Result<()> {
                     &names,
                     &max_path,
                     &mut local_max_path,
+                    args.verbose,
                 );
                 s
             };
