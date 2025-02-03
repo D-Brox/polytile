@@ -84,6 +84,10 @@ pub fn number2matrix(width: usize, height: usize, number: BigUint) -> Vec<Vec<bo
     matrix
 }
 
+pub fn number_of_tiles(width: usize, height: usize, number: BigUint) -> u64 {
+    (number >> (width * height)).count_ones()
+}
+
 pub fn min_rot(width: usize, height: usize, number: BigUint) -> BigUint {
     let matrix = number2matrix(width, height, number.clone());
     let bits = number >> width * height;
