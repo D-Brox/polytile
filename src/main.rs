@@ -5,7 +5,7 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::io::BufReader;
 use std::sync::Arc;
 use std::{fs::File, sync::Mutex};
@@ -47,13 +47,11 @@ fn main() -> Result<()> {
         bit_masked_tiles(args.width, args.height, tilefile);
     let mut first_tiles = tiles
         .iter()
-        .map(|n| min_rot(args.width, args.height, n.clone()))
+        .map(|n| min_rot(args.width, args.height, &n))
         .sorted()
         .collect::<Vec<_>>();
     first_tiles.dedup();
-    let mask0 = BigUint::ZERO;
     let max_path: Arc<Mutex<usize>> = Arc::new(Mutex::new(args.known_max - 1));
-    let grid_map: Arc<Mutex<HashMap<BigUint, usize>>> = Arc::new(Mutex::new(HashMap::new()));
     let solutions: Arc<Mutex<HashSet<(BigUint, usize)>>> = Arc::new(Mutex::new(HashSet::new()));
     let _ = first_tiles
         // .iter()
@@ -61,78 +59,55 @@ fn main() -> Result<()> {
         .progress_count(first_tiles.len() as u64)
         .map(|m1| {
             let max_path = Arc::clone(&max_path);
-            let grid_map = Arc::clone(&grid_map);
             let solutions = Arc::clone(&solutions);
 
             // Now we just do Knuth's Algorithm X
-            let filter_loop = |mask: BigUint, m: BigUint, uniq: &[BigUint], length: usize| {
+            let filter_loop = |m: &BigUint, uniq: &[BigUint], length: usize| {
                 fn max_shortest_path(
                     flat_grid: &BigUint,
                     width: usize,
                     height: usize,
                     names: &Vec<String>,
                     max_path: &Arc<Mutex<usize>>,
-                    grid_map: &Arc<Mutex<HashMap<BigUint, usize>>>,
                     solutions: &Arc<Mutex<HashSet<(BigUint, usize)>>>,
                     verbose: bool,
                 ) {
-                    let mask = min_rot(width, height, flat_grid.clone());
-                    let grid = mask.clone() & ((BigUint::from(1u32) << width * height) - 1u32);
-                    if let Some(&path_len) = grid_map.lock().unwrap().get(&grid) {
-                        if path_len >= *max_path.lock().unwrap() {
-                            if solutions.lock().unwrap().insert((mask, path_len)) && verbose {
-                                let tiles_grid = number2grid(
-                                    names.len(),
-                                    1,
-                                    flat_grid.clone() >> (height * width),
-                                );
-                                println!("{:#?}", number2grid(width, height, flat_grid.clone()));
-                                println!("{}", names.join(""));
-                                println!("{tiles_grid:#?} {}\n", path_len + 1);
-                            }
-                        }
-                    } else {
-                        let max_path_len = longest_shortest_path(width, height, mask);
-                        let mut max_path = max_path.lock().unwrap();
-                        if max_path_len >= *max_path {
-                            *max_path = max_path_len;
-                            if solutions
-                                .lock()
-                                .unwrap()
-                                .insert((min_rot(width, height, flat_grid.clone()), max_path_len))
-                                && verbose
-                            {
-                                let tiles_grid = number2grid(
-                                    names.len(),
-                                    1,
-                                    flat_grid.clone() >> (height * width),
-                                );
-                                println!("{:#?}", number2grid(width, height, flat_grid.clone()));
-                                println!("{}", names.join(""));
-                                println!("{tiles_grid:#?} {}\n", max_path_len + 1);
-                            }
+                    let mask = min_rot(width, height, &flat_grid);
+                    let max_path_len = longest_shortest_path(width, height, &mask);
+                    let mut max_path = max_path.lock().unwrap();
+                    if max_path_len >= *max_path {
+                        *max_path = max_path_len;
+                        drop(max_path);
+                        if solutions.lock().unwrap().insert((mask, max_path_len)) && verbose {
+                            println!("{:#?}", number2grid(width, height, flat_grid));
+                            println!("{}", names.join(""));
+                            println!(
+                                "{:#?} {}\n",
+                                number2grid(names.len(), 1, &(flat_grid >> (height * width))),
+                                max_path_len + 1
+                            );
                         }
                     }
                 }
 
                 fn filter(
-                    mask: BigUint,
-                    m: BigUint,
+                    mask: &BigUint,
+                    m: &BigUint,
                     uniq: &[BigUint],
                     masked: &mut Vec<BigUint>,
                 ) -> bool {
                     masked.clear();
                     masked.extend(
                         uniq.iter()
+                            .filter(|&m1| (mask & m1 == BigUint::ZERO) && (m1 > m))
                             .cloned()
-                            .filter(|m1| (m1 & mask.clone() == BigUint::ZERO) && (*m1 > m)),
                     ); // No intersections, and use next tile type
                     masked.is_empty()
                 }
                 fn filter_loop<F, G>(
                     total: usize,
                     mask: &BigUint,
-                    m: BigUint,
+                    m: &BigUint,
                     uniq: &[BigUint],
                     depth: usize,
                     width: usize,
@@ -141,54 +116,40 @@ fn main() -> Result<()> {
                     min_tiles: &G,
                     names: &Vec<String>,
                     max_path: &Arc<Mutex<usize>>,
-                    grid_map: &Arc<Mutex<HashMap<BigUint, usize>>>,
                     solutions: &Arc<Mutex<HashSet<(BigUint, usize)>>>,
                     verbose: bool,
                 ) where
-                    F: Fn(BigUint) -> bool,
-                    G: Fn(BigUint) -> bool,
+                    F: Fn(&BigUint) -> bool,
+                    G: Fn(&BigUint) -> bool,
                 {
-                    if max_tiles(mask.clone()) {
+                    if max_tiles(&mask) {
                         return;
                     }
-                    if min_tiles(mask.clone()) {
+                    if min_tiles(&mask) {
                         max_shortest_path(
-                            &mask, width, height, &names, &max_path, &grid_map, &solutions, verbose,
+                            &mask, width, height, &names, &max_path, &solutions, verbose,
                         );
                     }
                     // println!("{}",names.len() - depth);
-                    let mask1: BigUint = mask.clone() | m.clone();
+                    let mask1: BigUint = mask | m;
                     let mut masked1 = Vec::with_capacity(total);
-                    if filter(mask1.clone(), m.clone(), uniq, &mut masked1) {
+                    if filter(&mask1, m, uniq, &mut masked1) {
                         max_shortest_path(
-                            &mask1, width, height, &names, &max_path, &grid_map, &solutions,
-                            verbose,
+                            &mask1, width, height, &names, &max_path, &solutions, verbose,
                         );
                         return;
                     }
                     for m1 in &masked1 {
                         filter_loop(
-                            total,
-                            &mask1,
-                            m1.clone(),
-                            uniq,
-                            depth,
-                            width,
-                            height,
-                            max_tiles,
-                            min_tiles,
-                            &names,
-                            &max_path,
-                            &grid_map,
-                            &solutions,
-                            verbose,
+                            total, &mask1, m1, uniq, depth, width, height, max_tiles, min_tiles,
+                            &names, &max_path, &solutions, verbose,
                         );
                     }
                 }
                 filter_loop(
                     tiles.len(),
-                    &mask,
-                    m,
+                    &BigUint::ZERO,
+                    &m,
                     uniq,
                     length,
                     args.width,
@@ -197,23 +158,22 @@ fn main() -> Result<()> {
                     &|mask| number_of_tiles(args.width, args.height, mask) >= args.min_tiles as u64,
                     &names,
                     &max_path,
-                    &grid_map,
                     &solutions,
                     args.verbose,
                 );
             };
 
-            filter_loop(mask0.clone(), m1.clone(), &tiles, names.len());
+            filter_loop(&m1, &tiles, names.len());
         })
         .collect::<Vec<_>>();
     let mut solutions = solutions
         .lock()
         .unwrap()
-        .clone()
+        .to_owned()
         .into_iter()
         .filter_map(|(g, l)| {
             if l == *max_path.lock().unwrap() {
-                Some(g.clone())
+                Some(g)
             } else {
                 None
             }
@@ -221,11 +181,12 @@ fn main() -> Result<()> {
         .sorted()
         .collect_vec();
     solutions.dedup();
+    println!("\n#### Solutions ####\n");
     let solutions = solutions
         .iter()
         .map(|g| {
-            println!("{:#?}", number2grid(args.width, args.height, g.clone()));
-            let tiles_grid = number2grid(names.len(), 1, g.clone() >> (args.height * args.width));
+            println!("{:#?}", number2grid(args.width, args.height, g));
+            let tiles_grid = number2grid(names.len(), 1, &(g >> (args.height * args.width)));
             println!("{}", names.join(""));
             println!("{tiles_grid:#?}\n");
         })

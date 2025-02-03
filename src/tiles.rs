@@ -4,10 +4,9 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 use pathfinding::grid::Grid;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::sync::{Arc, Mutex};
 
 fn rotate(matrix: &[Vec<bool>]) -> Vec<Vec<bool>> {
     let m = matrix[0].len();
@@ -48,7 +47,7 @@ fn submatrix2matrices(matrix: &[Vec<bool>], width: usize, height: usize) -> Vec<
         return result;
     }
     for (i, j) in (0..=(height - h)).cartesian_product(0..=(width - w)) {
-        let mut temp = vec![vec![false; width]; width];
+        let mut temp = vec![vec![false; height]; width];
         for (k, l) in (0..h).cartesian_product(0..w) {
             temp[j + l][i + k] |= matrix[l][k];
         }
@@ -79,72 +78,64 @@ pub fn u64_2matrix(width: usize, height: usize, number: u64) -> Vec<Vec<bool>> {
     matrix
 }
 
-pub fn number2matrix(width: usize, height: usize, number: BigUint) -> Vec<Vec<bool>> {
+pub fn number2matrix(width: usize, height: usize, number: &BigUint) -> Vec<Vec<bool>> {
     let mut matrix = vec![vec![false; height]; width];
     for (i, j) in (0..height).cartesian_product(0..width) {
-        if (number.clone() & (BigUint::from(1u32) << (i * width + j))) != BigUint::ZERO {
+        if (number & (BigUint::from(1u32) << (i * width + j))) != BigUint::ZERO {
             matrix[j][i] = true;
         }
     }
     matrix
 }
 
-pub fn number_of_tiles(width: usize, height: usize, number: BigUint) -> u64 {
+pub fn number_of_tiles(width: usize, height: usize, number: &BigUint) -> u64 {
     (number >> (width * height)).count_ones()
 }
 
-pub fn min_rot(width: usize, height: usize, number: BigUint) -> BigUint {
-    let matrix = number2matrix(width, height, number.clone());
-    let bits = number >> width * height;
+pub fn min_rot(width: usize, height: usize, number: &BigUint) -> BigUint {
+    let matrix = number2matrix(width, height, number);
+    let bits = (number >> width * height)<< height * width;
     rotations_and_mirrors(&matrix)
         .iter()
         .filter(|m| m.len() == matrix.len())
-        .map(|m| matrix2number(m) + (bits.clone() << height * width))
+        .map(|m| &bits + matrix2number(m))
         .max()
         .unwrap()
 }
 
-pub fn number2grid(width: usize, height: usize, number: BigUint) -> Grid {
+pub fn number2grid(width: usize, height: usize, number: &BigUint) -> Grid {
     let mut grid = Grid::new(width, height);
     grid.fill();
     for (i, j) in (0..height).cartesian_product(0..width) {
-        if (number.clone() & (BigUint::from(1u32) << (i * width + j))) != BigUint::ZERO {
+        if (number & (BigUint::from(1u32) << (i * width + j))) != BigUint::ZERO {
             grid.remove_vertex((j, i));
         }
     }
     grid
 }
 
-pub fn longest_shortest_path(width: usize, height: usize, number: BigUint) -> usize {
+pub fn longest_shortest_path(width: usize, height: usize, number: &BigUint) -> usize {
     let grid = number2grid(width, height, number);
     let mut graph = Graph::<(usize, usize), usize, Undirected>::new_undirected();
     let nodes = grid
         .iter()
         .map(|square| (square, graph.add_node(square)))
         .collect::<HashMap<_, _>>();
-    let _ = grid
-        .edges()
-        .map(|(a, b)| graph.add_edge(nodes[&a], nodes[&b], 1))
-        .collect_vec();
-    // let mut diam = 0f32;
-    let diam = Arc::new(Mutex::new(0f32));
-    let nodes = nodes.values().collect_vec();
-    let _ = nodes
+    for (a, b) in grid.edges() {
+        graph.add_edge(nodes[&a], nodes[&b], 1);
+    }
+    let distances = nodes
         .par_iter()
-        .map(|&&node| {
-            let diam = Arc::clone(&diam);
+        .flat_map(|(_, &node)| {
             let shortest_distances = shortest_distances(&graph, node);
-            let distances = shortest_distances
+            shortest_distances
                 .iter()
-                .filter(|&dist| *dist != f32::INFINITY);
-            for &dist in distances {
-                let mut diam = diam.lock().unwrap();
-                *diam = diam.max(dist);
-            }
+                .filter(|&dist| *dist != f32::INFINITY)
+                .map(|dist| *dist as usize)
+                .collect::<BTreeSet<_>>()
         })
-        .collect::<Vec<_>>();
-    let diam = diam.lock().unwrap();
-    diam.clone() as usize
+        .collect::<BTreeSet<_>>();
+    *distances.last().unwrap_or(&0)
 }
 
 pub fn bit_masked_tiles(
