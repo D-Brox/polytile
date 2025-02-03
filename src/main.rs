@@ -3,15 +3,14 @@ use clap::Parser;
 use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
 use num_bigint::BigUint;
-use pathfinding::directed::astar;
-use pathfinding::prelude::strongly_connected_components;
+
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::io::BufReader;
 use std::sync::Arc;
 use std::{fs::File, sync::Mutex};
 mod tiles;
-use tiles::{bit_masked_tiles, min_rot, number2grid, number_of_tiles};
+use tiles::{bit_masked_tiles, longest_shortest_path, min_rot, number2grid, number_of_tiles};
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -93,42 +92,8 @@ fn main() -> Result<()> {
                             }
                         }
                     } else {
-                        let max_path_len = Arc::new(Mutex::new(0));
-                        let grid = number2grid(width, height, mask);
-                        let cliques =
-                            strongly_connected_components(&grid.iter().collect_vec(), |&p| {
-                                grid.neighbours(p)
-                            });
-                        let pairs = cliques
-                            .iter()
-                            .filter(|group| group.len() >= *max_path.lock().unwrap())
-                            .sorted_by(|a, b| b.len().cmp(&a.len()))
-                            .flat_map(|group| group.iter().cloned().combinations(2))
-                            .collect_vec();
-                        let _ = pairs
-                            .par_iter()
-                            .map(|pair| {
-                                let max_path_len = Arc::clone(&max_path_len);
-                                if let Some((_, path_len)) = astar::astar(
-                                    &pair[0],
-                                    |&p| {
-                                        grid.neighbours(p)
-                                            .into_iter()
-                                            .map(|p| (p, 1))
-                                            .collect::<Vec<_>>()
-                                    },
-                                    |&p| grid.distance(p, pair[1]),
-                                    |&p| p == pair[1],
-                                ) {
-                                    let mut max_path_len = max_path_len.lock().unwrap();
-                                    *max_path_len = max_path_len.max(path_len);
-                                };
-                                ()
-                            })
-                            .collect::<Vec<_>>();
-
+                        let max_path_len = longest_shortest_path(width, height, mask);
                         let mut max_path = max_path.lock().unwrap();
-                        let max_path_len = max_path_len.lock().unwrap().clone();
                         if max_path_len >= *max_path {
                             *max_path = max_path_len;
                             if solutions

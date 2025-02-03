@@ -1,8 +1,13 @@
+use graphalgs::petgraph::{Graph, Undirected};
+use graphalgs::shortest_path::shortest_distances;
 use itertools::Itertools;
 use num_bigint::BigUint;
 use pathfinding::grid::Grid;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::sync::{Arc, Mutex};
 
 fn rotate(matrix: &[Vec<bool>]) -> Vec<Vec<bool>> {
     let m = matrix[0].len();
@@ -108,6 +113,38 @@ pub fn number2grid(width: usize, height: usize, number: BigUint) -> Grid {
         }
     }
     grid
+}
+
+pub fn longest_shortest_path(width: usize, height: usize, number: BigUint) -> usize {
+    let grid = number2grid(width, height, number);
+    let mut graph = Graph::<(usize, usize), usize, Undirected>::new_undirected();
+    let nodes = grid
+        .iter()
+        .map(|square| (square, graph.add_node(square)))
+        .collect::<HashMap<_, _>>();
+    let _ = grid
+        .edges()
+        .map(|(a, b)| graph.add_edge(nodes[&a], nodes[&b], 1))
+        .collect_vec();
+    // let mut diam = 0f32;
+    let diam = Arc::new(Mutex::new(0f32));
+    let nodes = nodes.values().collect_vec();
+    let _ = nodes
+        .par_iter()
+        .map(|&&node| {
+            let diam = Arc::clone(&diam);
+            let shortest_distances = shortest_distances(&graph, node);
+            let distances = shortest_distances
+                .iter()
+                .filter(|&dist| *dist != f32::INFINITY);
+            for &dist in distances {
+                let mut diam = diam.lock().unwrap();
+                *diam = diam.max(dist);
+            }
+        })
+        .collect::<Vec<_>>();
+    let diam = diam.lock().unwrap();
+    diam.clone() as usize
 }
 
 pub fn bit_masked_tiles(

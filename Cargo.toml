@@ -12,3 +12,4 @@ pathfinding = "4.14.0"
 rayon = "1.6.1"
 indicatif = {version = "0.17.3", features = ["rayon"]}
 seq-macro = "0.3.5"
+graphalgs = "0.2.0"
