@@ -5,7 +5,6 @@ use itertools::Itertools;
 use num_bigint::BigUint;
 
 use rayon::prelude::*;
-use std::collections::HashSet;
 use std::io::BufReader;
 use std::sync::Arc;
 use std::{fs::File, sync::Mutex};
@@ -52,24 +51,22 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
     first_tiles.dedup();
     let max_path: Arc<Mutex<usize>> = Arc::new(Mutex::new(args.known_max - 1));
-    let solutions: Arc<Mutex<HashSet<(BigUint, usize)>>> = Arc::new(Mutex::new(HashSet::new()));
-    let _ = first_tiles
+    let solutions = first_tiles
         // .iter()
         .par_iter()
         .progress_count(first_tiles.len() as u64)
-        .map(|m1| {
+        .flat_map(|m1| {
             let max_path = Arc::clone(&max_path);
-            let solutions = Arc::clone(&solutions);
 
             // Now we just do Knuth's Algorithm X
-            let filter_loop = |m: &BigUint, uniq: &[BigUint], length: usize| {
+            let filter_loop = |m: &BigUint, uniq: &[BigUint]| {
                 fn max_shortest_path(
                     flat_grid: &BigUint,
                     width: usize,
                     height: usize,
                     names: &Vec<String>,
                     max_path: &Arc<Mutex<usize>>,
-                    solutions: &Arc<Mutex<HashSet<(BigUint, usize)>>>,
+                    solutions: &mut Vec<(BigUint, usize)>,
                     verbose: bool,
                 ) {
                     let mask = min_rot(width, height, &flat_grid);
@@ -78,7 +75,8 @@ fn main() -> Result<()> {
                     if max_path_len >= *max_path {
                         *max_path = max_path_len;
                         drop(max_path);
-                        if solutions.lock().unwrap().insert((mask, max_path_len)) && verbose {
+                        solutions.push((mask, max_path_len));
+                        if verbose {
                             println!("{:#?}", number2grid(width, height, flat_grid));
                             println!("{}", names.join(""));
                             println!(
@@ -100,23 +98,21 @@ fn main() -> Result<()> {
                     masked.extend(
                         uniq.iter()
                             .filter(|&m1| (mask & m1 == BigUint::ZERO) && (m1 > m))
-                            .cloned()
+                            .cloned(),
                     ); // No intersections, and use next tile type
                     masked.is_empty()
                 }
                 fn filter_loop<F, G>(
-                    total: usize,
                     mask: &BigUint,
                     m: &BigUint,
                     uniq: &[BigUint],
-                    depth: usize,
                     width: usize,
                     height: usize,
                     max_tiles: &F,
                     min_tiles: &G,
                     names: &Vec<String>,
                     max_path: &Arc<Mutex<usize>>,
-                    solutions: &Arc<Mutex<HashSet<(BigUint, usize)>>>,
+                    solutions: &mut Vec<(BigUint, usize)>,
                     verbose: bool,
                 ) where
                     F: Fn(&BigUint) -> bool,
@@ -127,68 +123,58 @@ fn main() -> Result<()> {
                     }
                     if min_tiles(&mask) {
                         max_shortest_path(
-                            &mask, width, height, &names, &max_path, &solutions, verbose,
+                            &mask, width, height, &names, &max_path, solutions, verbose,
                         );
                     }
-                    // println!("{}",names.len() - depth);
                     let mask1: BigUint = mask | m;
-                    let mut masked1 = Vec::with_capacity(total);
+                    let mut masked1 = Vec::with_capacity(uniq.len());
                     if filter(&mask1, m, uniq, &mut masked1) {
                         max_shortest_path(
-                            &mask1, width, height, &names, &max_path, &solutions, verbose,
+                            &mask1, width, height, &names, &max_path, solutions, verbose,
                         );
                         return;
                     }
                     for m1 in &masked1 {
                         filter_loop(
-                            total, &mask1, m1, uniq, depth, width, height, max_tiles, min_tiles,
-                            &names, &max_path, &solutions, verbose,
+                            &mask1, m1, uniq, width, height, max_tiles, min_tiles, &names,
+                            &max_path, solutions, verbose,
                         );
                     }
                 }
+                let mut solutions = Vec::new();
                 filter_loop(
-                    tiles.len(),
                     &BigUint::ZERO,
                     &m,
                     uniq,
-                    length,
                     args.width,
                     args.height,
                     &|mask| number_of_tiles(args.width, args.height, mask) > args.max_tiles as u64,
                     &|mask| number_of_tiles(args.width, args.height, mask) >= args.min_tiles as u64,
                     &names,
                     &max_path,
-                    &solutions,
+                    &mut solutions,
                     args.verbose,
                 );
+                solutions
             };
 
-            filter_loop(&m1, &tiles, names.len());
+            filter_loop(&m1, &tiles)
         })
         .collect::<Vec<_>>();
-    let mut solutions = solutions
-        .lock()
-        .unwrap()
-        .to_owned()
+
+    println!("\n#### Solutions ####\n");
+    let solutions = solutions
         .into_iter()
         .filter_map(|(g, l)| {
             if l == *max_path.lock().unwrap() {
-                Some(g)
+                println!("{:#?}", number2grid(args.width, args.height, &g));
+                let tiles_grid = number2grid(names.len(), 1, &(g >> (args.height * args.width)));
+                println!("{}", names.join(""));
+                println!("{tiles_grid:#?}\n");
+                Some(())
             } else {
                 None
             }
-        })
-        .sorted()
-        .collect_vec();
-    solutions.dedup();
-    println!("\n#### Solutions ####\n");
-    let solutions = solutions
-        .iter()
-        .map(|g| {
-            println!("{:#?}", number2grid(args.width, args.height, g));
-            let tiles_grid = number2grid(names.len(), 1, &(g >> (args.height * args.width)));
-            println!("{}", names.join(""));
-            println!("{tiles_grid:#?}\n");
         })
         .collect::<Vec<_>>();
     let total = solutions.len();

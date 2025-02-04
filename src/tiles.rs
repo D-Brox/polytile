@@ -94,7 +94,7 @@ pub fn number_of_tiles(width: usize, height: usize, number: &BigUint) -> u64 {
 
 pub fn min_rot(width: usize, height: usize, number: &BigUint) -> BigUint {
     let matrix = number2matrix(width, height, number);
-    let bits = (number >> width * height)<< height * width;
+    let bits = (number >> width * height) << height * width;
     rotations_and_mirrors(&matrix)
         .iter()
         .filter(|m| m.len() == matrix.len())
