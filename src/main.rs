@@ -91,17 +91,16 @@ fn main() -> Result<()> {
                     }
                 }
 
-                fn filter(
+                fn filter<'a>(
                     mask: &BigUint,
                     m: &BigUint,
-                    uniq: &[BigUint],
-                    masked: &mut Vec<BigUint>,
+                    uniq: &'a [BigUint],
+                    masked: &mut Vec<&'a BigUint>,
                 ) -> bool {
                     masked.clear();
                     masked.extend(
                         uniq.iter()
                             .filter(|&m1| (mask & m1 == BigUint::ZERO) && (m1 > m))
-                            .cloned(),
                     ); // No intersections, and use next tile type
                     masked.is_empty()
                 }
