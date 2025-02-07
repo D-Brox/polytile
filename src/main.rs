@@ -51,6 +51,7 @@ fn main() -> Result<()> {
         .collect::<Vec<_>>();
     first_tiles.dedup();
     let max_path: Arc<Mutex<usize>> = Arc::new(Mutex::new(args.known_max - 1));
+    let uniq = tiles.iter().collect_vec();
     let solutions = first_tiles
         // .iter()
         .par_iter()
@@ -59,7 +60,7 @@ fn main() -> Result<()> {
             let max_path = Arc::clone(&max_path);
 
             // Now we just do Knuth's Algorithm X
-            let filter_loop = |m: &BigUint, uniq: &[BigUint]| {
+            let filter_loop = |m: &BigUint, uniq: &[&BigUint]| {
                 fn max_shortest_path(
                     flat_grid: &BigUint,
                     width: usize,
@@ -94,20 +95,20 @@ fn main() -> Result<()> {
                 fn filter<'a>(
                     mask: &BigUint,
                     m: &BigUint,
-                    uniq: &'a [BigUint],
+                    uniq: &'a [&BigUint],
                     masked: &mut Vec<&'a BigUint>,
                 ) -> bool {
                     masked.clear();
                     masked.extend(
                         uniq.iter()
-                            .filter(|&m1| (mask & m1 == BigUint::ZERO) && (m1 > m))
+                            .filter(|&m1| (m < *m1) && (mask & *m1 == BigUint::ZERO))
                     ); // No intersections, and use next tile type
                     masked.is_empty()
                 }
                 fn filter_loop<F, G>(
                     mask: &BigUint,
                     m: &BigUint,
-                    uniq: &[BigUint],
+                    uniq: &[&BigUint],
                     width: usize,
                     height: usize,
                     max_tiles: &F,
@@ -138,7 +139,7 @@ fn main() -> Result<()> {
                     }
                     for m1 in &masked1 {
                         filter_loop(
-                            &mask1, m1, uniq, width, height, max_tiles, min_tiles, &names,
+                            &mask1, m1, &masked1, width, height, max_tiles, min_tiles, &names,
                             &max_path, solutions, verbose,
                         );
                     }
@@ -160,7 +161,7 @@ fn main() -> Result<()> {
                 solutions
             };
 
-            filter_loop(&m1, &tiles)
+            filter_loop(&m1, &uniq)
         })
         .collect::<Vec<_>>();
 
