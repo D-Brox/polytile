@@ -1,3 +1,4 @@
+use graphalgs::connect::scc::tarjan_scc;
 use graphalgs::petgraph::{Graph, Undirected};
 use graphalgs::shortest_path::shortest_distances;
 use itertools::Itertools;
@@ -114,7 +115,12 @@ pub fn number2grid(width: usize, height: usize, number: &BigUint) -> Grid {
     grid
 }
 
-pub fn longest_shortest_path(width: usize, height: usize, number: &BigUint) -> usize {
+pub fn longest_shortest_path(
+    width: usize,
+    height: usize,
+    number: &BigUint,
+    threshold: usize,
+) -> usize {
     let grid = number2grid(width, height, number);
     let mut graph = Graph::<(usize, usize), usize, Undirected>::new_undirected();
     let nodes = grid
@@ -124,10 +130,17 @@ pub fn longest_shortest_path(width: usize, height: usize, number: &BigUint) -> u
     for (a, b) in grid.edges() {
         graph.add_edge(nodes[&a], nodes[&b], 1);
     }
+    let binding = tarjan_scc(&graph);
+    let nodes = binding
+        .iter()
+        .filter_map(|g| if g.len() >= threshold { Some(g) } else { None })
+        .flatten()
+        .collect_vec();
+
     let distances = nodes
         .par_iter()
-        .flat_map(|(_, &node)| {
-            let shortest_distances = shortest_distances(&graph, node);
+        .flat_map(|&node| {
+            let shortest_distances = shortest_distances(&graph, *node);
             shortest_distances
                 .iter()
                 .filter(|&dist| *dist != f32::INFINITY)

@@ -70,7 +70,10 @@ fn main() -> Result<()> {
                     verbose: bool,
                 ) {
                     let mask = min_rot(width, height, &flat_grid);
-                    let max_path_len = longest_shortest_path(width, height, &mask);
+                    let max_path_len = longest_shortest_path(width, height, &mask, {
+                        let max_path = max_path.lock().unwrap();
+                        *max_path
+                    });
                     let mut max_path = max_path.lock().unwrap();
                     if max_path_len >= *max_path {
                         *max_path = max_path_len;
