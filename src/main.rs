@@ -1,28 +1,27 @@
-use anyhow::Result;
-use clap::Parser;
-use indicatif::ParallelProgressIterator;
-use itertools::Itertools;
-use num_bigint::BigUint;
-
-use rayon::prelude::*;
 use std::io::BufReader;
 use std::sync::Arc;
 use std::{fs::File, sync::Mutex};
+
+use indicatif::ParallelProgressIterator;
+use itertools::Itertools;
+use rayon::prelude::*;
+
+use anyhow::Result;
+use clap::Parser;
+
 mod tiles;
+use num_bigint::BigUint;
 use tiles::{bit_masked_tiles, longest_shortest_path, min_rot, number2grid, number_of_tiles};
 
-/// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(long)]
     file: String,
 
-    /// Name of the person to greet
     #[arg(long)]
     height: usize,
 
-    /// Number of times to greet
     #[arg(long)]
     width: usize,
 
@@ -61,6 +60,7 @@ fn main() -> Result<()> {
 
             // Now we just do Knuth's Algorithm X
             let filter_loop = |m: &BigUint, uniq: &[&BigUint]| {
+                // Solution check
                 fn max_shortest_path(
                     flat_grid: &BigUint,
                     width: usize,
@@ -92,6 +92,7 @@ fn main() -> Result<()> {
                     }
                 }
 
+                // Filter bit-masked tiles
                 fn filter<'a>(
                     mask: &BigUint,
                     m: &BigUint,
@@ -101,10 +102,12 @@ fn main() -> Result<()> {
                     masked.clear();
                     masked.extend(
                         uniq.iter()
-                            .filter(|&m1| (m < *m1) && (mask & *m1 == BigUint::ZERO))
+                            .filter(|&m1| (m < *m1) && (mask & *m1 == BigUint::ZERO)),
                     ); // No intersections, and use next tile type
                     masked.is_empty()
                 }
+
+                // Nested for loop of arbitrary depth
                 fn filter_loop<F, G>(
                     mask: &BigUint,
                     m: &BigUint,
@@ -121,22 +124,26 @@ fn main() -> Result<()> {
                     F: Fn(&BigUint) -> bool,
                     G: Fn(&BigUint) -> bool,
                 {
+                    // Check min an max number of tiles
                     if max_tiles(&mask) {
-                        return;
+                        return; // Already passed the max, ignore
                     }
                     if min_tiles(&mask) {
                         max_shortest_path(
                             &mask, width, height, &names, &max_path, solutions, verbose,
                         );
                     }
+                    // Add tile to mask
                     let mask1: BigUint = mask | m;
                     let mut masked1 = Vec::with_capacity(uniq.len());
+                    // If no more tiles fit, check solution
                     if filter(&mask1, m, uniq, &mut masked1) {
                         max_shortest_path(
                             &mask1, width, height, &names, &max_path, solutions, verbose,
                         );
                         return;
                     }
+                    // Check next possible tiles
                     for m1 in &masked1 {
                         filter_loop(
                             &mask1, m1, &masked1, width, height, max_tiles, min_tiles, &names,

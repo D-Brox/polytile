@@ -1,13 +1,15 @@
-use graphalgs::connect::scc::tarjan_scc;
-use graphalgs::petgraph::{Graph, Undirected};
-use graphalgs::shortest_path::shortest_distances;
-use itertools::Itertools;
-use num_bigint::BigUint;
-use pathfinding::grid::Grid;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+
+use itertools::Itertools;
+use rayon::prelude::*;
+
+use graphalgs::{
+    connect::scc::tarjan_scc, petgraph::graph::UnGraph, shortest_path::shortest_distances,
+};
+use num_bigint::BigUint;
+use pathfinding::grid::Grid;
 
 fn rotate(matrix: &[Vec<bool>]) -> Vec<Vec<bool>> {
     let m = matrix[0].len();
@@ -122,7 +124,8 @@ pub fn longest_shortest_path(
     threshold: usize,
 ) -> usize {
     let grid = number2grid(width, height, number);
-    let mut graph = Graph::<(usize, usize), usize, Undirected>::new_undirected();
+    // Convert from pathfinding::Grid -> petgraph::Ungraph
+    let mut graph = UnGraph::<(usize, usize), usize>::new_undirected();
     let nodes = grid
         .iter()
         .map(|square| (square, graph.add_node(square)))
@@ -130,10 +133,23 @@ pub fn longest_shortest_path(
     for (a, b) in grid.edges() {
         graph.add_edge(nodes[&a], nodes[&b], 1);
     }
+    // Find all disjoint subgraphs
     let binding = tarjan_scc(&graph);
     let nodes = binding
         .iter()
-        .filter_map(|g| if g.len() >= threshold { Some(g) } else { None })
+        .filter_map(|g| {
+            // Get subgraph
+            let graph = graph.filter_map(
+                |n, _| if g.contains(&n) { Some(()) } else { None },
+                |_, _| Some(()),
+            );
+            // Upperbound check
+            if (2 * graph.node_count() - graph.edge_count() - 2) >= threshold {
+                Some(g)
+            } else {
+                None
+            }
+        })
         .flatten()
         .collect_vec();
 
