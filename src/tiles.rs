@@ -144,7 +144,7 @@ pub fn longest_shortest_path(
                 |_, _| Some(()),
             );
             // Upperbound check
-            if (2 * graph.node_count() - graph.edge_count() - 2) >= threshold {
+            if (2 * graph.node_count() - graph.edge_count() - 1) >= threshold {
                 Some(g)
             } else {
                 None
