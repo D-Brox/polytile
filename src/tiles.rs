@@ -97,7 +97,7 @@ pub fn number_of_tiles(width: usize, height: usize, number: &BigUint) -> u64 {
 
 pub fn min_rot(width: usize, height: usize, number: &BigUint) -> BigUint {
     let matrix = number2matrix(width, height, number);
-    let bits = (number >> width * height) << height * width;
+    let bits = (number >> (width * height)) << (height * width);
     rotations_and_mirrors(&matrix)
         .iter()
         .filter(|m| m.len() == matrix.len())
@@ -135,7 +135,7 @@ pub fn longest_shortest_path(
     }
     // Find all disjoint subgraphs
     let binding = tarjan_scc(&graph);
-    let nodes = binding
+    let graphs = binding
         .iter()
         .filter_map(|g| {
             // Get subgraph
@@ -145,23 +145,28 @@ pub fn longest_shortest_path(
             );
             // Upperbound check
             if (2 * graph.node_count() - graph.edge_count() - 1) >= threshold {
-                Some(g)
+                Some(graph)
             } else {
                 None
             }
         })
-        .flatten()
         .collect_vec();
 
-    let distances = nodes
-        .par_iter()
-        .flat_map(|&node| {
-            let shortest_distances = shortest_distances(&graph, *node);
-            shortest_distances
-                .iter()
-                .filter(|&dist| *dist != f32::INFINITY)
-                .map(|dist| *dist as usize)
-                .collect::<BTreeSet<_>>()
+    let distances = graphs
+        .into_par_iter()
+        .flat_map(|graph| {
+            graph
+                .node_indices()
+                .collect_vec()
+                .par_iter()
+                .flat_map(|&node| {
+                    let shortest_distances = shortest_distances(&graph, node);
+                    shortest_distances
+                        .iter()
+                        .map(|dist| *dist as usize)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
         })
         .collect::<BTreeSet<_>>();
     *distances.last().unwrap_or(&0)
@@ -190,9 +195,7 @@ pub fn bit_masked_tiles(
                 .unique()
                 .flat_map(|matrix| submatrix2matrices(matrix, width, height))
                 .map(|matrix| {
-                    let number =
-                        matrix2number(&matrix) + (BigUint::from(1u32) << (height * width + l));
-                    number
+                    matrix2number(&matrix) + (BigUint::from(1u32) << (height * width + l))
                 })
                 .collect()
         })

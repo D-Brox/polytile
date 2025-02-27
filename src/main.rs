@@ -1,8 +1,8 @@
+use std::fs::File;
 use std::io::BufReader;
-use std::sync::Arc;
-use std::{fs::File, sync::Mutex};
+use std::sync::RwLock;
 
-use indicatif::ParallelProgressIterator;
+use indicatif::ProgressBar;
 use itertools::Itertools;
 use rayon::prelude::*;
 
@@ -41,52 +41,51 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
     let tilefile = BufReader::new(File::open(args.file)?);
-    let (tiles, names): (Vec<BigUint>, Vec<String>) =
+    let (tiles, tile_names): (Vec<BigUint>, Vec<String>) =
         bit_masked_tiles(args.width, args.height, tilefile);
     let mut first_tiles = tiles
         .iter()
-        .map(|n| min_rot(args.width, args.height, &n))
+        .map(|n| min_rot(args.width, args.height, n))
         .sorted()
         .collect::<Vec<_>>();
     first_tiles.dedup();
-    let max_path: Arc<Mutex<usize>> = Arc::new(Mutex::new(args.known_max - 1));
+    let max_path: RwLock<usize> = RwLock::new(args.known_max - 1);
     let uniq = tiles.iter().collect_vec();
+    let bar = ProgressBar::new(first_tiles.len() as u64);
+    bar.inc(0);
     let solutions = first_tiles
-        // .iter()
         .par_iter()
-        .progress_count(first_tiles.len() as u64)
         .flat_map(|m1| {
-            let max_path = Arc::clone(&max_path);
-
             // Now we just do Knuth's Algorithm X
             let filter_loop = |m: &BigUint, uniq: &[&BigUint]| {
                 // Solution check
                 fn max_shortest_path(
                     flat_grid: &BigUint,
-                    width: usize,
-                    height: usize,
-                    names: &Vec<String>,
-                    max_path: &Arc<Mutex<usize>>,
+                    sizes: (usize, usize),
+                    max_path: &RwLock<usize>,
                     solutions: &mut Vec<(BigUint, usize)>,
-                    verbose: bool,
+                    tile_names: Option<&[String]>,
                 ) {
-                    let mask = min_rot(width, height, &flat_grid);
-                    let max_path_len = longest_shortest_path(width, height, &mask, {
-                        let max_path = max_path.lock().unwrap();
-                        *max_path
-                    });
-                    let mut max_path = max_path.lock().unwrap();
-                    if max_path_len >= *max_path {
-                        *max_path = max_path_len;
-                        drop(max_path);
-                        solutions.push((mask, max_path_len));
-                        if verbose {
-                            println!("{:#?}", number2grid(width, height, flat_grid));
-                            println!("{}", names.join(""));
+                    let mask = min_rot(sizes.0, sizes.1, flat_grid);
+                    let diameter =
+                        longest_shortest_path(sizes.0, sizes.1, &mask, *(max_path.read().unwrap()));
+                    if diameter >= *(max_path.read().unwrap()) {
+                        {
+                            let mut max_path = max_path.write().unwrap();
+                            *max_path = diameter;
+                        }
+                        solutions.push((mask, diameter));
+                        if let Some(tile_names) = tile_names {
+                            println!("{:#?}", number2grid(sizes.0, sizes.1, flat_grid));
+                            println!("{}", tile_names.join(""));
                             println!(
                                 "{:#?} {}\n",
-                                number2grid(names.len(), 1, &(flat_grid >> (height * width))),
-                                max_path_len + 1
+                                number2grid(
+                                    tile_names.len(),
+                                    1,
+                                    &(flat_grid >> (sizes.0 * sizes.1))
+                                ),
+                                diameter + 1
                             );
                         }
                     }
@@ -95,80 +94,78 @@ fn main() -> Result<()> {
                 // Filter bit-masked tiles
                 fn filter<'a>(
                     mask: &BigUint,
-                    m: &BigUint,
-                    uniq: &'a [&BigUint],
+                    uniq: &[&'a BigUint],
                     masked: &mut Vec<&'a BigUint>,
                 ) -> bool {
-                    masked.clear();
                     masked.extend(
                         uniq.iter()
-                            .filter(|&m1| (m < *m1) && (mask & *m1 == BigUint::ZERO)),
+                            .filter(|&m1| (mask < *m1) & (mask & *m1 == BigUint::ZERO)),
                     ); // No intersections, and use next tile type
                     masked.is_empty()
                 }
 
                 // Nested for loop of arbitrary depth
-                fn filter_loop<F, G>(
+                fn filter_loop<MinFn, MaxFn>(
                     mask: &BigUint,
-                    m: &BigUint,
                     uniq: &[&BigUint],
-                    width: usize,
-                    height: usize,
-                    max_tiles: &F,
-                    min_tiles: &G,
-                    names: &Vec<String>,
-                    max_path: &Arc<Mutex<usize>>,
+                    sizes: (usize, usize),
+                    min_max: &(MinFn, MaxFn),
+                    max_path: &RwLock<usize>,
                     solutions: &mut Vec<(BigUint, usize)>,
-                    verbose: bool,
+                    tile_names: Option<&[String]>,
                 ) where
-                    F: Fn(&BigUint) -> bool,
-                    G: Fn(&BigUint) -> bool,
+                    MinFn: Fn(&BigUint) -> bool,
+                    MaxFn: Fn(&BigUint) -> bool,
                 {
-                    // Check min an max number of tiles
-                    if max_tiles(&mask) {
-                        return; // Already passed the max, ignore
-                    }
-                    if min_tiles(&mask) {
-                        max_shortest_path(
-                            &mask, width, height, &names, &max_path, solutions, verbose,
-                        );
-                    }
-                    // Add tile to mask
-                    let mask1: BigUint = mask | m;
-                    let mut masked1 = Vec::with_capacity(uniq.len());
+                    let mut masked = Vec::with_capacity(uniq.len());
                     // If no more tiles fit, check solution
-                    if filter(&mask1, m, uniq, &mut masked1) {
-                        max_shortest_path(
-                            &mask1, width, height, &names, &max_path, solutions, verbose,
-                        );
+                    if min_max.1(mask) || filter(mask, uniq, &mut masked) {
+                        max_shortest_path(mask, sizes, max_path, solutions, tile_names);
                         return;
+                    } else if min_max.0(mask) {
+                        // Print if min has been reached
+                        max_shortest_path(mask, sizes, max_path, solutions, tile_names);
                     }
                     // Check next possible tiles
-                    for m1 in &masked1 {
+                    for &m in &masked {
                         filter_loop(
-                            &mask1, m1, &masked1, width, height, max_tiles, min_tiles, &names,
-                            &max_path, solutions, verbose,
+                            &(mask | m),
+                            &masked,
+                            sizes,
+                            min_max,
+                            max_path,
+                            solutions,
+                            tile_names,
                         );
                     }
                 }
                 let mut solutions = Vec::new();
                 filter_loop(
-                    &BigUint::ZERO,
-                    &m,
+                    m,
                     uniq,
-                    args.width,
-                    args.height,
-                    &|mask| number_of_tiles(args.width, args.height, mask) > args.max_tiles as u64,
-                    &|mask| number_of_tiles(args.width, args.height, mask) >= args.min_tiles as u64,
-                    &names,
+                    (args.width, args.height),
+                    &(
+                        |mask| {
+                            number_of_tiles(args.width, args.height, mask) >= args.min_tiles as u64
+                        },
+                        |mask| {
+                            number_of_tiles(args.width, args.height, mask) > args.max_tiles as u64
+                        },
+                    ),
                     &max_path,
                     &mut solutions,
-                    args.verbose,
+                    if args.verbose {
+                        Some(&tile_names)
+                    } else {
+                        None
+                    },
                 );
                 solutions
             };
 
-            filter_loop(&m1, &uniq)
+            let s = filter_loop(m1, &uniq);
+            bar.inc(1);
+            s
         })
         .collect::<Vec<_>>();
 
@@ -176,10 +173,11 @@ fn main() -> Result<()> {
     let solutions = solutions
         .into_iter()
         .filter_map(|(g, l)| {
-            if l == *max_path.lock().unwrap() {
+            if l == *max_path.read().unwrap() {
                 println!("{:#?}", number2grid(args.width, args.height, &g));
-                let tiles_grid = number2grid(names.len(), 1, &(g >> (args.height * args.width)));
-                println!("{}", names.join(""));
+                let tiles_grid =
+                    number2grid(tile_names.len(), 1, &(g >> (args.height * args.width)));
+                println!("{}", tile_names.join(""));
                 println!("{tiles_grid:#?}\n");
                 Some(())
             } else {
@@ -190,7 +188,7 @@ fn main() -> Result<()> {
     let total = solutions.len();
     println!(
         "Max path: {}\nUnique solutions:{total}",
-        *max_path.lock().unwrap() + 1
+        *max_path.read().unwrap() + 1
     );
     Ok(())
 }
